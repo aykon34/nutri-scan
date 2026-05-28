@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Next.js / Node.js
+node_modules/
+.next/
+out/
+package.json
+pnpm-lock.yaml
+next.config.mjs
+postcss.config.mjs
+tsconfig.json
+components.json
+
+# TypeScript / Frontend
+components/
+hooks/
+lib/
+styles/
+app/
