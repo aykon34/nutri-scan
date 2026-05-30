@@ -6,6 +6,7 @@ Maps food item names from receipts to nutritional data.
 """
 
 import os
+import re
 import pandas as pd
 from typing import Dict, List, Optional
 import difflib
@@ -44,7 +45,14 @@ class NutritionDatabase:
             Dict with nutrition info, or None if not found
         """
         
-        item_name = item_name.lower().strip()
+        # Strip OCR noise characters before any matching.
+        # Characters like $, (, ), @, #, *, / are never part of a food keyword
+        # but routinely appear in OCR output from receipt symbols and prices.
+        item_name = re.sub(r"[^a-z0-9\s]", " ", item_name.lower().strip())
+        item_name = " ".join(item_name.split())  # collapse whitespace
+        
+        if not item_name:
+            return None
         
         # Exact match first
         matches = self.df[self.df['item_keyword'] == item_name]
@@ -52,7 +60,9 @@ class NutritionDatabase:
             return matches.iloc[0].to_dict()
         
         # Partial/substring match
-        matches = self.df[self.df['item_keyword'].str.contains(item_name, na=False)]
+        # regex=False is critical: OCR output contains special regex characters
+        # like '(', ')', '$', '+' that crash re.compile when used as a pattern.
+        matches = self.df[self.df['item_keyword'].str.contains(item_name, na=False, regex=False)]
         if not matches.empty:
             return matches.iloc[0].to_dict()
         

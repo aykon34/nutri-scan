@@ -63,18 +63,29 @@ def pil_to_cv(pil_image: Image.Image) -> np.ndarray:
 
 def cv_to_pil(cv_image: np.ndarray) -> Image.Image:
     """
-    Convert OpenCV image (BGR) to PIL Image (RGB).
-    
+    Convert OpenCV image (BGR or grayscale) to PIL Image.
+
+    Handles both 3-channel BGR images and single-channel grayscale/binary
+    images safely. The original version crashed on grayscale images because
+    it blindly applied COLOR_BGR2RGB to a 2D array.
+
     Args:
-        cv_image: Image as numpy array (BGR format)
-    
+        cv_image: Image as numpy array (BGR or grayscale)
+
     Returns:
         PIL Image object
     """
-    
-    # Convert BGR to RGB
-    rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
-    pil_image = Image.fromarray(rgb_image)
+
+    if cv_image is None:
+        raise ValueError("cv_to_pil received None image")
+
+    if len(cv_image.shape) == 2:
+        # Grayscale or binary image — convert to uint8 and wrap directly
+        pil_image = Image.fromarray(cv_image.astype(np.uint8))
+    else:
+        # Color BGR — convert to RGB for PIL/Streamlit display
+        rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(rgb_image)
     return pil_image
 
 

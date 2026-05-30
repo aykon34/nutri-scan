@@ -35,7 +35,7 @@ from utils.annotation import annotate_receipt, create_annotation_legend
 
 st.set_page_config(
     page_title="NutriScan - Receipt Scanner",
-    page_icon="📸",
+    page_icon="🍎",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -84,10 +84,10 @@ st.markdown("""
 # ==================== Sidebar Configuration ====================
 
 with st.sidebar:
-    st.title("📋 NutriScan Control Panel")
+    st.title("NutriScan Control Panel")
     
     # Description
-    with st.expander("ℹ️ About NutriScan", expanded=False):
+    with st.expander("About NutriScan", expanded=False):
         st.markdown("""
         **NutriScan** is a Computer Vision application that:
         
@@ -102,7 +102,7 @@ with st.sidebar:
         """)
     
     # Color legend
-    with st.expander("🎨 Annotation Legend", expanded=False):
+    with st.expander("Annotation Legend", expanded=False):
         legend = create_annotation_legend()
         col1, col2 = st.columns(2)
         with col1:
@@ -113,7 +113,7 @@ with st.sidebar:
             st.write("Unrecognized text")
     
     # How to use
-    with st.expander("🔧 How to Use", expanded=False):
+    with st.expander("How to Use", expanded=False):
         st.markdown("""
         1. **Upload or capture** a receipt image
         2. **Click Process** to apply CV techniques
@@ -123,7 +123,7 @@ with st.sidebar:
         """)
     
     # Processing options
-    st.subheader("⚙️ Processing Options")
+    st.subheader("Processing Options")
     
     show_preprocessing = st.checkbox("Show preprocessing steps", value=True)
     show_ocr_regions = st.checkbox("Show OCR text regions", value=True)
@@ -140,7 +140,7 @@ with st.sidebar:
 # ==================== Main Application ====================
 
 # Header
-st.markdown('<p class="title-main">📸 NutriScan</p>', unsafe_allow_html=True)
+st.markdown('<p class="title-main"> NutriScan</p>', unsafe_allow_html=True)
 st.markdown(
     '<p class="subtitle">A Receipt-Based Dietary Insight Tool Using Computer Vision</p>',
     unsafe_allow_html=True
@@ -148,10 +148,10 @@ st.markdown(
 
 # Tabs for different sections
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📤 Upload & Capture",
-    "🔬 CV Processing",
-    "📊 Results",
-    "📈 Nutrition Analysis"
+    "Upload & Capture",
+    "CV Processing",
+    "Results",
+    "Nutrition Analysis"
 ])
 
 # ==================== TAB 1: Upload & Capture ====================
@@ -162,7 +162,7 @@ with tab1:
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📤 Upload Image")
+        st.subheader("Upload Image")
         uploaded_file = st.file_uploader(
             "Choose a receipt image",
             type=["jpg", "jpeg", "png", "bmp"],
@@ -170,7 +170,7 @@ with tab1:
         )
     
     with col2:
-        st.subheader("📷 Capture with Camera")
+        st.subheader("Capture with Camera")
         camera_image = st.camera_input("Take a receipt photo")
     
     # Select which input to use
@@ -181,6 +181,8 @@ with tab1:
         image_input = Image.open(uploaded_file)
         image_source = "upload"
     elif camera_image is not None:
+        # st.camera_input already captures in correct orientation — no flip needed.
+        # The live preview looks mirrored but the captured photo is unmirrored.
         image_input = Image.open(camera_image)
         image_source = "camera"
     
@@ -190,7 +192,7 @@ with tab1:
         st.session_state.image_source = image_source
         
         # Display original image
-        st.success(f"✓ Image loaded ({image_source})")
+        st.success(f"Image loaded ({image_source})")
         
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -206,7 +208,7 @@ with tab1:
             st.metric("Size", f"{info['size_mb']:.2f}MB")
         
         # Process button
-        if st.button("🚀 Process Receipt", key="process_btn", use_container_width=True):
+        if st.button("Process Receipt", key="process_btn", use_container_width=True):
             st.session_state.process_triggered = True
 
 
@@ -216,15 +218,15 @@ with tab2:
     st.header("Computer Vision Processing Pipeline")
     
     if 'original_image' not in st.session_state:
-        st.warning("⚠️ Please upload or capture a receipt image first (Upload & Capture tab)")
+        st.warning("Please upload or capture a receipt image first (Upload & Capture tab)")
     else:
         if st.session_state.get('process_triggered', False):
-            with st.spinner("🔄 Processing receipt..."):
+            with st.spinner("Processing receipt..."):
                 # Convert PIL to OpenCV format
                 original_cv = pil_to_cv(st.session_state.original_image)
                 
                 # ========== TECHNIQUE 1: Preprocessing ==========
-                st.subheader("Technique 1️⃣: Image Preprocessing")
+                st.subheader("Technique 1️: Image Preprocessing")
                 st.markdown("""
                 **What it does:** Converts image to grayscale, applies adaptive thresholding 
                 to handle uneven lighting, and uses morphological operations to clean noise.
@@ -250,7 +252,7 @@ with tab2:
                 st.divider()
                 
                 # ========== TECHNIQUE 2: Edge Detection & Contour Finding ==========
-                st.subheader("Technique 2️⃣: Edge Detection & Contour Finding")
+                st.subheader("Technique 2️: Edge Detection & Contour Finding")
                 st.markdown("""
                 **What it does:** Uses Canny edge detection to find receipt borders, 
                 detects contours, and applies perspective transformation for deskewing.
@@ -271,18 +273,26 @@ with tab2:
                 st.divider()
                 
                 # ========== TECHNIQUE 3: OCR Text Extraction ==========
-                st.subheader("Technique 3️⃣: OCR Text Extraction")
+                st.subheader("Technique 3️: OCR Text Extraction")
                 st.markdown("""
                 **What it does:** Uses Tesseract OCR to extract text from the 
                 preprocessed receipt image.
                 """)
                 
-                with st.spinner("🔤 Extracting text with Tesseract OCR..."):
-                    raw_text = extract_text(warped)
+                with st.spinner("Extracting text with Tesseract OCR..."):
+                    # IMPORTANT: OCR must receive a clean grayscale image, NOT the binary
+                    # morphological image. Convert the warped (perspective-corrected) image
+                    # to grayscale so Tesseract gets full tonal detail.
+                    if len(warped.shape) == 3:
+                        warped_gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+                    else:
+                        warped_gray = warped.copy()
+
+                    raw_text = extract_text(warped_gray)
                     st.session_state.raw_ocr_text = raw_text
                     
                     # Get text regions
-                    ocr_metadata = get_ocr_metadata(warped)
+                    ocr_metadata = get_ocr_metadata(warped_gray)
                     text_regions = ocr_metadata['text_regions']
                     st.session_state.text_regions = text_regions
                 
@@ -311,7 +321,7 @@ with tab2:
                     annotated_cv = draw_bounding_boxes(original_cv, text_regions, color=(0, 255, 0), thickness=2)
                     st.image(cv_to_pil(annotated_cv), caption="Text Regions Detected", use_column_width=True)
                 
-                st.success("✅ CV Pipeline Processing Complete!")
+                st.success("CV Pipeline Processing Complete!")
 
 
 # ==================== TAB 3: Results ====================
@@ -320,21 +330,21 @@ with tab3:
     st.header("Receipt Analysis Results")
     
     if 'raw_ocr_text' not in st.session_state:
-        st.warning("⚠️ Please process a receipt first (CV Processing tab)")
+        st.warning("Please process a receipt first (CV Processing tab)")
     else:
         # Parse items from OCR text
-        with st.spinner("📝 Parsing receipt items..."):
+        with st.spinner("Parsing receipt items..."):
             parsed_items = parse_items(st.session_state.raw_ocr_text)
             st.session_state.parsed_items = parsed_items
         
         # Enrich with nutrition data
-        with st.spinner("🥗 Looking up nutritional data..."):
+        with st.spinner("Looking up nutritional data..."):
             enriched_items = enrich_parsed_items(parsed_items)
             st.session_state.enriched_items = enriched_items
         
         # Display parsed items
         if len(parsed_items) > 0:
-            st.subheader("📋 Extracted Items")
+            st.subheader("Extracted Items")
             
             # Create display dataframe
             display_items = []
@@ -343,7 +353,7 @@ with tab3:
                     'Item Name': clean_item_name(item.get('name', 'Unknown')),
                     'Price': f"${item.get('price', 0):.2f}",
                     'Calories': int(item.get('calories', 0)),
-                    'Status': "✓ Found" if item.get('found') else "❌ Not in DB"
+                    'Status': "Found" if item.get('found') else "Not in DB"
                 })
             
             st.dataframe(display_items, use_container_width=True, hide_index=True)
@@ -352,27 +362,32 @@ with tab3:
             recognized_items = {item.get('name', '') for item in enriched_items if item.get('found')}
             
             if show_annotated and recognized_items:
-                st.subheader("🎨 Annotated Receipt")
-                annotated_img = annotate_receipt(
-                    st.session_state.original_image if hasattr(st.session_state, 'original_image') else None,
-                    st.session_state.get('text_regions', []),
-                    recognized_items
-                )
-                if annotated_img is not None:
-                    st.image(annotated_img, caption="Receipt with Recognized Items Highlighted", use_column_width=True)
+                st.subheader("Annotated Receipt")
+                # original_image is a PIL Image — convert to OpenCV BGR array
+                # before passing to annotate_receipt which uses cv2.rectangle.
+                _orig = st.session_state.get('original_image')
+                if _orig is not None:
+                    _orig_cv = pil_to_cv(_orig)
+                    annotated_img = annotate_receipt(
+                        _orig_cv,
+                        st.session_state.get('text_regions', []),
+                        recognized_items
+                    )
+                    if annotated_img is not None:
+                        st.image(cv_to_pil(annotated_img), caption="Receipt with Recognized Items Highlighted", use_column_width=True)
         
         else:
-            st.warning("⚠️ No items could be parsed from the receipt.")
+            st.warning("No items could be parsed from the receipt.")
             st.info("Try with a clearer receipt image or ensure the receipt is straight.")
 
 
 # ==================== TAB 4: Nutrition Analysis ====================
 
 with tab4:
-    st.header("📊 Nutritional Analysis & Insights")
+    st.header("Nutritional Analysis & Insights")
     
     if 'enriched_items' not in st.session_state or len(st.session_state.enriched_items) == 0:
-        st.warning("⚠️ Please process a receipt first (Tabs 1-3)")
+        st.warning("Please process a receipt first (Tabs 1-3)")
     else:
         enriched_items = st.session_state.enriched_items
         
@@ -380,7 +395,7 @@ with tab4:
         nutrition_summary = get_nutrition_summary(enriched_items)
         
         # Display key metrics
-        st.subheader("🎯 Nutritional Summary")
+        st.subheader("Nutritional Summary")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -413,7 +428,7 @@ with tab4:
         st.divider()
         
         # Macronutrient breakdown
-        st.subheader("🥗 Macronutrient Breakdown")
+        st.subheader("Macronutrient Breakdown")
         
         if nutrition_summary['total_calories'] > 0:
             col1, col2 = st.columns([2, 1])
@@ -450,7 +465,7 @@ with tab4:
         st.divider()
         
         # Items found vs not found
-        st.subheader("📈 Database Match Statistics")
+        st.subheader("Database Match Statistics")
         
         col1, col2, col3 = st.columns(3)
         
@@ -478,7 +493,7 @@ with tab4:
         st.divider()
         
         # Detailed items table
-        st.subheader("📋 Detailed Items Breakdown")
+        st.subheader("Detailed Items Breakdown")
         
         detail_items = []
         for item in enriched_items:
@@ -489,7 +504,7 @@ with tab4:
                 'Protein': f"{item.get('protein_g', 0):.1f}g",
                 'Carbs': f"{item.get('carbs_g', 0):.1f}g",
                 'Fat': f"{item.get('fat_g', 0):.1f}g",
-                'Status': "✓ DB" if item.get('found') else "⚠️ Estimate"
+                'Status': "Found" if item.get('found') else "Not Found"
             })
         
         st.dataframe(detail_items, use_container_width=True, hide_index=True)
@@ -498,9 +513,9 @@ with tab4:
         st.subheader("💡 Dietary Insights")
         
         if nutrition_summary['total_calories'] > 2500:
-            st.warning(f"⚠️ High calorie intake: {nutrition_summary['total_calories']:.0f} kcal")
+            st.warning(f"High calorie intake: {nutrition_summary['total_calories']:.0f} kcal")
         elif nutrition_summary['total_calories'] > 2000:
-            st.info(f"ℹ️ Moderate calorie intake: {nutrition_summary['total_calories']:.0f} kcal")
+            st.info(f" Moderate calorie intake: {nutrition_summary['total_calories']:.0f} kcal")
         else:
             st.success(f"✓ Reasonable calorie intake: {nutrition_summary['total_calories']:.0f} kcal")
         
@@ -508,7 +523,7 @@ with tab4:
         if nutrition_summary['total_protein_g'] >= 56:
             st.success(f"✓ Good protein intake: {nutrition_summary['total_protein_g']:.1f}g")
         else:
-            st.info(f"ℹ️ Protein: {nutrition_summary['total_protein_g']:.1f}g")
+            st.info(f"Protein: {nutrition_summary['total_protein_g']:.1f}g")
         
         # Export results
         st.divider()
@@ -516,7 +531,7 @@ with tab4:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📥 Export Results as CSV"):
+            if st.button("Export Results as CSV"):
                 # Create CSV data
                 csv_data = "Item Name,Price,Calories,Protein(g),Carbs(g),Fat(g),Status\n"
                 for item in enriched_items:
@@ -530,7 +545,7 @@ with tab4:
                 )
         
         with col2:
-            if st.button("📊 Clear All Data"):
+            if st.button("Clear All Data"):
                 st.session_state.clear()
                 st.success("✓ All data cleared. Refresh to start over.")
 
@@ -542,20 +557,20 @@ st.divider()
 footer_col1, footer_col2, footer_col3 = st.columns(3)
 
 with footer_col1:
-    st.write("**🎓 CMSC 191: Computer Vision**")
+    st.write("**CMSC 191: Computer Vision**")
     st.write("Final Project")
 
 with footer_col2:
-    st.write("**📚 CV Techniques Used:**")
+    st.write("**CV Techniques Used:**")
     st.write("✓ Image Preprocessing")
     st.write("✓ Edge/Contour Detection")
     st.write("✓ OCR Text Extraction")
 
 with footer_col3:
-    st.write("**⚙️ Technology Stack:**")
+    st.write("**Technology Stack:**")
     st.write("• OpenCV")
     st.write("• Tesseract")
     st.write("• Streamlit")
 
 st.markdown("<hr>", unsafe_allow_html=True)
-st.caption("NutriScan © 2024 | A Receipt-Based Dietary Insight Tool Using Computer Vision")
+st.caption("NutriScan © 2026 | A Receipt-Based Dietary Insight Tool Using Computer Vision")

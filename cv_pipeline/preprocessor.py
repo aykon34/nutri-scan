@@ -48,18 +48,13 @@ def preprocess(image: np.ndarray) -> tuple:
     )
     
     # Step 4: Morphological Operations
-    # Create kernel for morphological operations
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    
-    # Apply dilation to fill small holes
-    dilated = cv2.dilate(thresh, kernel, iterations=2)
-    
-    # Apply erosion to remove small noise
-    cleaned = cv2.erode(dilated, kernel, iterations=1)
-    
-    # Optional: Apply closing (dilation then erosion) for better cleanup
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel, iterations=1)
-    
+    # Use a small kernel to avoid merging thin receipt text characters
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+
+    # Apply closing (fills tiny gaps inside characters without merging them)
+    # Using only 1 iteration to preserve character strokes
+    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
+
     return cleaned, gray, thresh
 
 
@@ -94,9 +89,7 @@ def preprocess_advanced(image: np.ndarray,
         constant
     )
     
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    dilated = cv2.dilate(thresh, kernel, iterations=dilation_iter)
-    cleaned = cv2.erode(dilated, kernel, iterations=erosion_iter)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel, iterations=1)
-    
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
+
     return cleaned
