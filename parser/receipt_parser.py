@@ -6,180 +6,192 @@ Handles parsing of raw OCR text to extract:
 - Prices
 - Quantities
 - Other relevant information from receipts
-
-Uses regex patterns tailored to typical receipt formats.
 """
 
 import re
 from typing import List, Dict, Tuple
 
 
-# Common patterns for receipt items
-PATTERNS = {
-    'item_with_price': r'([A-Za-z\s\d\(\)\/]+?)\s+(\d+(?:\.\d{2})?)\s*$',
-    'qty_item_price': r'(\d+)\s*[xX]\s*([A-Za-z\s\d]+?)\s+(\d+(?:\.\d{2})?)',
-    'price': r'\d+(?:\.\d{2})?',
-    'quantity': r'(\d+(?:\.\d+)?)\s*(?:kg|g|ml|l|pcs?|pieces?)',
+# Keywords that identify non-food summary lines — never treat as items
+SKIP_KEYWORDS = {
+    'total', 'subtotal', 'sub-total', 'sub total',
+    'tax', 'vat', 'gst',
+    'cash', 'change', 'due', 'paid',
+    'receipt', 'invoice', 'order',
+    'thank', 'you', 'welcome',
+    'date', 'time', 'server', 'table',
+    'discount', 'savings', 'coupon',
+    'amount', 'balance', 'payment',
+    'tip', 'gratuity', 'signature',
 }
+
+QUANTITY_PATTERN = re.compile(
+    r'(\d+(?:\.\d+)?)\s*(?:kg|g|ml|l|pcs?|pieces?|oz|lb|lbs)',
+    re.IGNORECASE
+)
+
+
+def _is_skip_line(line: str) -> bool:
+    """Return True if this line is a receipt summary/header, not a food item."""
+    lower = line.lower()
+    return any(kw in lower for kw in SKIP_KEYWORDS)
 
 
 def parse_items(raw_ocr_text: str) -> List[Dict[str, any]]:
     """
     Parse raw OCR text to extract food items and prices.
-    
+
+    Handles common receipt formats:
+      - "APPLE 1.00"
+      - "2 APPLE 1.00"        (leading quantity)
+      - "2 x APPLE 1.00"      (quantity with x)
+      - "1 LEMON | 0.60"      (pipe separator)
+      - "BURGER DELUXE $14.99" (dollar sign prefix)
+
     Args:
         raw_ocr_text: Raw text from OCR extraction
-    
+
     Returns:
         List of dicts with keys: 'name', 'price', 'quantity', 'confidence'
     """
-    
+
     items = []
     lines = raw_ocr_text.split('\n')
-    
+
     for line in lines:
         line = line.strip()
         if not line or len(line) < 3:
             continue
-        
-        # Try to extract item and price
-        parsed = extract_prices_and_items(line)
+        if _is_skip_line(line):
+            continue
+
+        parsed = _extract_item(line)
         if parsed:
             items.append(parsed)
-    
+
     return items
 
 
-def extract_prices_and_items(line: str) -> Dict[str, any]:
+def _extract_item(line: str) -> Dict[str, any]:
     """
-    Extract item name and price from a single line.
-    
+    Extract item name and price from a single receipt line.
+
+    Handles these formats (with optional leading quantity):
+      [QTY] NAME [|] [$]PRICE
+
     Args:
-        line: Single line of receipt text
-    
+        line: Single receipt line
+
     Returns:
-        Dict with 'name' and 'price', or None if no match
+        Dict with name/price/quantity/confidence, or None
     """
-    
+
     line = line.strip()
     if not line:
         return None
-    
-    # Pattern: ITEM_NAME PRICE
-    # Example: EGGS 1KG 89.00
-    pattern = r'([A-Za-z\s\d\(\)\/\-]+?)\s+(\d+(?:\.\d{2})?)\s*$'
-    match = re.search(pattern, line)
-    
-    if match:
-        item_name = match.group(1).strip()
-        price_str = match.group(2).strip()
-        
-        # Filter out lines that are just numbers or timestamps
-        if len(item_name) >= 2 and not item_name.isdigit():
-            try:
-                price = float(price_str)
-                
-                # Extract quantity if present
-                quantity_match = re.search(PATTERNS['quantity'], item_name)
-                quantity = None
-                if quantity_match:
-                    quantity = quantity_match.group(1)
-                
-                return {
-                    'name': item_name,
-                    'price': price,
-                    'quantity': quantity,
-                    'confidence': 0.8  # Default confidence
-                }
-            except ValueError:
-                pass
-    
-    return None
+
+    # Normalise separators: replace pipe | with space
+    line = line.replace('|', ' ')
+    # Collapse multiple spaces
+    line = re.sub(r' {2,}', ' ', line)
+
+    # --- Strip optional leading quantity: "2 APPLE ..." or "2 x APPLE ..." ---
+    leading_qty = None
+    qty_match = re.match(r'^(\d+)\s*[xX]?\s+', line)
+    if qty_match:
+        # Only strip it if what follows starts with a letter (it's a count, not a price)
+        remainder = line[qty_match.end():]
+        if remainder and remainder[0].isalpha():
+            leading_qty = qty_match.group(1)
+            line = remainder
+
+    # --- Main pattern: NAME followed by optional $ then a number at end of line ---
+    # Name: letters, digits, spaces, common punctuation (but NOT a bare number)
+    pattern = re.compile(
+        r'^([A-Za-z][A-Za-z0-9\s\(\)\/\-\%\.&\'\"]*?)'   # item name (must start with letter)
+        r'\s+\$?'                                           # separator + optional $
+        r'(\d{1,6}(?:[.,]\d{1,2})?)'                       # price (with . or , decimal)
+        r'\s*$'
+    )
+    match = pattern.match(line)
+
+    if not match:
+        return None
+
+    item_name = match.group(1).strip()
+    price_str = match.group(2).replace(',', '.')  # handle comma decimals
+
+    # Must have at least 2 letters to be a real item name
+    if len(re.findall(r'[A-Za-z]', item_name)) < 2:
+        return None
+
+    # Skip summary lines that slipped through
+    if _is_skip_line(item_name):
+        return None
+
+    try:
+        price = float(price_str)
+    except ValueError:
+        return None
+
+    # Reject implausibly large prices (likely a barcode or date)
+    if price > 100000:
+        return None
+
+    # Extract inline quantity if present in name (e.g. "APPLE 1KG")
+    qty_in_name = QUANTITY_PATTERN.search(item_name)
+    quantity = leading_qty or (qty_in_name.group(1) if qty_in_name else None)
+
+    return {
+        'name': item_name,
+        'price': price,
+        'quantity': quantity,
+        'confidence': 0.85,
+    }
+
+
+# Keep these public functions so the rest of the app doesn't break
+
+
+def extract_prices_and_items(line: str) -> Dict[str, any]:
+    """Public alias used by other modules."""
+    return _extract_item(line)
 
 
 def clean_item_name(name: str) -> str:
-    """
-    Clean and normalize item name.
-    
-    Args:
-        name: Raw item name from OCR
-    
-    Returns:
-        Cleaned item name
-    """
-    
-    # Remove extra whitespace
+    """Clean and normalise item name."""
     name = ' '.join(name.split())
-    
-    # Remove common receipt artifacts
     name = re.sub(r'\*+', '', name)
     name = re.sub(r'#+', '', name)
     name = re.sub(r'\.{2,}', '', name)
-    
-    # Convert to title case
     name = name.title()
-    
-    # Remove quantity units from the name
-    name = re.sub(r'\s*(?:kg|g|ml|l|pcs?|pieces?|oz|lb|lbs)', '', name, flags=re.IGNORECASE)
-    
+    # CRITICAL FIX: units must be preceded by a digit or space+digit and followed
+    # by a word boundary, so we never strip letters from inside food names.
+    # Bad: r"\s*(?:kg|g|ml|l|...)" matched "l" inside "Apple", "Milk", "Lemon" etc.
+    name = re.sub(r'(?<=\d)\s*(?:kg|g|ml|l|pcs?|pieces?|oz|lbs?)', '', name, flags=re.IGNORECASE)
     return name.strip()
 
 
 def extract_quantity_and_unit(text: str) -> Tuple[float, str]:
-    """
-    Extract quantity and unit from text.
-    
-    Args:
-        text: Text containing quantity and unit
-    
-    Returns:
-        Tuple of (quantity, unit)
-    """
-    
-    # Pattern: number UNIT
+    """Extract quantity and unit from text."""
     match = re.search(r'(\d+(?:\.\d+)?)\s*([a-zA-Z]+)', text)
-    
     if match:
-        quantity = float(match.group(1))
-        unit = match.group(2).lower()
-        return quantity, unit
-    
+        return float(match.group(1)), match.group(2).lower()
     return None, None
 
 
 def validate_price(price_str: str) -> bool:
-    """
-    Validate if a string represents a valid price.
-    
-    Args:
-        price_str: Price string to validate
-    
-    Returns:
-        True if valid price format
-    """
-    
-    pattern = r'^\d+(?:\.\d{1,2})?$'
-    return bool(re.match(pattern, price_str.strip()))
+    """Validate if a string represents a valid price."""
+    return bool(re.match(r'^\d+(?:\.\d{1,2})?$', price_str.strip()))
 
 
 def extract_total_price(text: str) -> float:
-    """
-    Extract total price from receipt text.
-    
-    Args:
-        text: Receipt text
-    
-    Returns:
-        Total price as float, or None
-    """
-    
-    # Look for patterns like "TOTAL: 123.45" or "TOTAL 123.45"
+    """Extract total price from receipt text."""
     patterns = [
-        r'TOTAL\s*:?\s*(\d+(?:\.\d{2})?)',
-        r'SUBTOTAL\s*:?\s*(\d+(?:\.\d{2})?)',
-        r'AMOUNT\s*:?\s*(\d+(?:\.\d{2})?)',
+        r'TOTAL\s*:?\s*\$?(\d+(?:\.\d{2})?)',
+        r'SUBTOTAL\s*:?\s*\$?(\d+(?:\.\d{2})?)',
+        r'AMOUNT\s*:?\s*\$?(\d+(?:\.\d{2})?)',
     ]
-    
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
@@ -187,119 +199,59 @@ def extract_total_price(text: str) -> float:
                 return float(match.group(1))
             except ValueError:
                 pass
-    
     return None
 
 
 def extract_date(text: str) -> str:
-    """
-    Extract date from receipt text.
-    
-    Args:
-        text: Receipt text
-    
-    Returns:
-        Date string if found, None otherwise
-    """
-    
-    # Common date patterns: MM/DD/YY, MM/DD/YYYY, DD/MM/YY, etc.
+    """Extract date from receipt text."""
     patterns = [
-        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',  # MM-DD-YYYY or variations
-        r'\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{2,4}',  # DD Month YYYY
+        r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',
+        r'\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{2,4}',
     ]
-    
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             return match.group(0)
-    
     return None
 
 
 def extract_time(text: str) -> str:
-    """
-    Extract time from receipt text.
-    
-    Args:
-        text: Receipt text
-    
-    Returns:
-        Time string if found, None otherwise
-    """
-    
-    # Pattern: HH:MM or HH:MM:SS
-    pattern = r'\d{1,2}:\d{2}(?::\d{2})?'
-    match = re.search(pattern, text)
-    
-    if match:
-        return match.group(0)
-    
-    return None
+    """Extract time from receipt text."""
+    match = re.search(r'\d{1,2}:\d{2}(?::\d{2})?', text)
+    return match.group(0) if match else None
 
 
 def parse_receipt_header(text: str) -> Dict[str, str]:
-    """
-    Extract header information from receipt.
-    
-    Args:
-        text: Receipt text
-    
-    Returns:
-        Dict with store name, date, time, etc.
-    """
-    
+    """Extract header information from receipt."""
     header_info = {}
-    
-    # Extract date
     date = extract_date(text)
     if date:
         header_info['date'] = date
-    
-    # Extract time
     time = extract_time(text)
     if time:
         header_info['time'] = time
-    
-    # Extract total
     total = extract_total_price(text)
     if total:
         header_info['total'] = total
-    
-    # First line is usually store name
     lines = text.split('\n')
     if lines:
         header_info['store_name'] = lines[0].strip()
-    
     return header_info
 
 
 def merge_split_items(items: List[Dict[str, any]]) -> List[Dict[str, any]]:
-    """
-    Merge items that were split across multiple lines.
-    
-    Args:
-        items: List of parsed items
-    
-    Returns:
-        Merged items list
-    """
-    
+    """Merge items that were split across multiple lines."""
     if not items:
         return items
-    
     merged = []
     current_item = None
-    
     for item in items:
         if current_item and item['name'].lower().startswith(current_item['name'].lower()):
-            # Same item continued on next line
             current_item['name'] += ' ' + item['name']
         else:
             if current_item:
                 merged.append(current_item)
             current_item = item.copy()
-    
     if current_item:
         merged.append(current_item)
-    
     return merged
