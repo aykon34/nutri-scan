@@ -1,4 +1,8 @@
 """
+Course: CMSC 191: Special Topics - Computer Vision in Python
+Programmers: Carl Raymund Suello & Jodell Adlaon
+Year: 2026 
+
 NutriScan: A Receipt-Based Dietary Insight Tool Using Computer Vision
 
 Main Streamlit Application
@@ -11,8 +15,6 @@ This application combines Computer Vision techniques to:
 5. Look up nutritional information
 6. Visualize results and provide dietary insights
 
-Author: CMSC 191 Final Project
-Date: 2024
 """
 
 import streamlit as st
